@@ -99,8 +99,6 @@ SceneJS.Types.addType("geometry/randomObjects", {
                     alpha: curAlpha
                 });
             }
-            
-            //console.log('fuck test');
 
             // Geometry
             node.addNode({
