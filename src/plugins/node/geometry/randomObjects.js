@@ -21,7 +21,7 @@ SceneJS.Types.addType("geometry/randomObjects", {
         var numObjects = params.numObjects || 1000;
         var materials = params.materials != false;
         var alpha = params.alpha || 1;
-        var hasRandomTransparency = params.randomTransparency ? true : false;
+        var hasRandomTransparency = params.randomTransparency !== undefined;
         var randomTransparency = params.randomTransparency || 0;
         var node;
 
@@ -77,6 +77,7 @@ SceneJS.Types.addType("geometry/randomObjects", {
                     }
                 } else {
                     if (alpha < 1) {
+                        curAlpha = alpha;
                         node = node.addNode({
                             type: "flags",
                             flags: {
