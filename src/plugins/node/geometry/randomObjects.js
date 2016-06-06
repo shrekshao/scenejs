@@ -21,8 +21,11 @@ SceneJS.Types.addType("geometry/randomObjects", {
         var numObjects = params.numObjects || 1000;
         var materials = params.materials != false;
         var alpha = params.alpha || 1;
+        var hasRandomTransparency = params.randomTransparency ? true : false;
+        var randomTransparency = params.randomTransparency || 0;
         var node;
 
+        var curAlpha = 1;
         for (var i = 0, len = numObjects; i < len; i++) {
 
             // Random position
@@ -60,14 +63,29 @@ SceneJS.Types.addType("geometry/randomObjects", {
 
             if (materials) {
 
-                if (alpha < 1) {
-                    node = node.addNode({
-                        type: "flags",
-                        flags: {
-                            transparent: true
-                        }
-                    });
+                if (hasRandomTransparency) {
+                    if(Math.random() < randomTransparency) {
+                        node = node.addNode({
+                            type: "flags",
+                            flags: {
+                                transparent: true
+                            }
+                        });
+                        curAlpha = alpha;
+                    } else {
+                        curAlpha = 1;
+                    }
+                } else {
+                    if (alpha < 1) {
+                        node = node.addNode({
+                            type: "flags",
+                            flags: {
+                                transparent: true
+                            }
+                        });
+                    }
                 }
+                
 
                 // Random material
                 node = node.addNode({
@@ -77,9 +95,11 @@ SceneJS.Types.addType("geometry/randomObjects", {
                         g: Math.random(),
                         b: Math.random()
                     },
-                    alpha: alpha
+                    alpha: curAlpha
                 });
             }
+            
+            //console.log('fuck test');
 
             // Geometry
             node.addNode({
