@@ -593,18 +593,18 @@ SceneJS_Display.prototype.render = function (params) {
         this.stateOrderDirty = true;        // Now needs state ordering
     }
 
-
+    var stateOrderDirty = this.stateOrderDirty;
     if (this.stateOrderDirty || (this.imageDirty && this.depthSort)) {
 
         // State sort will be dirty if the state order was dirty (due to priority or
         // or transparency change) or if depth is re-calculated in _makeStateSortKeys
         this.stateSortDirty = this.stateOrderDirty;     // Now needs state sorting
-        this._makeStateSortKeys(this.stateOrderDirty, this.depthSort);                      // Compute state sort order
+        this._makeStateSortKeys();                      // Compute state sort order
         this.stateOrderDirty = false;
     }
 
     if (this.stateSortDirty) {
-        this._stateSort();              // State sort the object render bin
+        this._stateSort(stateOrderDirty);              // State sort the object render bin
         this.stateSortDirty = false;
         this.drawListDirty = true;      // Now needs new visible object bin
         //this._logObjectList();
@@ -662,15 +662,11 @@ SceneJS_Display.prototype._buildObjectList = function () {
 
 };
 
-SceneJS_Display.prototype._makeStateSortKeys = function (stateSort, transparentDepthSort) {
+SceneJS_Display.prototype._makeStateSortKeys = function () {
     //  console.log("--------------------------------------------------------------------------------------------------");
     // console.log("SceneJS_Display_makeSortKeys");
-    
 
-    
-
-
-    if (stateSort) {
+    if (this.stateOrderDirty) {
         for (i = 0, len = this._opaqueObjectListLen; i < len; i++) {
             object = this._opaqueObjectList[i];
             if (!object.program) {
@@ -717,25 +713,20 @@ SceneJS_Display.prototype._makeStateSortKeys = function (stateSort, transparentD
             //var transparent = object.flags.transparent;
             var depth;
 
-            if (transparentDepthSort) {
+            if (this.depthSort) {
                 depth = object.getDepth();
                 this.stateSortDirty = true;
-                stateSort = true;
             } else {
                 depth = 0;
             }
 
-            if (transparentDepthSort) {
-                object.sortKey1 = (object.stage.priority + 1) * 3000 +
-                              //(transparent ? 2 : 1) * 1000 +
-                              (object.layer.priority + 1) +
-                              1 / (depth + 1);
-            }
+            object.sortKey1 = (object.stage.priority + 1) * 3000 +
+                            //(transparent ? 2 : 1) * 1000 +
+                            (object.layer.priority + 1) +
+                            1 / (depth + 1);
             
-            if (stateSort) {
-                object.sortKey2 = (object.program.id + 1) * 100000 +
+            object.sortKey2 = (object.program.id + 1) * 100000 +
                               object.texture.stateId;
-            }
             
         }
     }
@@ -746,26 +737,25 @@ SceneJS_Display.prototype._makeStateSortKeys = function (stateSort, transparentD
     //  console.log("--------------------------------------------------------------------------------------------------");
 };
 
-SceneJS_Display.prototype._stateSort = function () {
+SceneJS_Display.prototype._stateSort = function (stateOrderDirty) {
     //this._objectList.length = this._objectListLen;
     //this._objectList.sort(this._stateSortObjects);
     
     this._transparentObjectList.length = this._transparentObjectListLen;
     this._transparentObjectList.sort(this._stateSortObjects);
 
-    this._opaqueObjectList.length = this._opaqueObjectListLen;
-    this._opaqueObjectList.sort(this._stateSortObjects);
+    // don't sort opaque list if the sort is trigerred by depthSort
+    if (stateOrderDirty) {
+        this._opaqueObjectList.length = this._opaqueObjectListLen;
+        this._opaqueObjectList.sort(this._stateSortObjects);
+    }
+    
 };
 
 SceneJS_Display.prototype._stateSortObjects = function (a, b) {
     return  (a.sortKey1 - b.sortKey1) ||
             (a.sortKey2 - b.sortKey2);
 };
-
-// SceneJS_Display.prototype._stateSortObjectsOpaque = function (a, b) {
-//     return  (a.sortKey1 - b.sortKey1) ||
-//             (a.sortKey2 - b.sortKey2);
-// };
 
 SceneJS_Display.prototype._logObjectList = function () {
     console.log("--------------------------------------------------------------------------------------------------");
