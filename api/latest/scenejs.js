@@ -4,7 +4,7 @@
  * A WebGL-based 3D scene graph from xeoLabs
  * http://scenejs.org/
  *
- * Built on 2016-05-17
+ * Built on 2016-06-07
  *
  * MIT License
  * Copyright 2016, Lindsay Kay
@@ -1990,6 +1990,11 @@ var SceneJS_Engine = function (json, options) {
     this._sceneBranchesDirty = false;
 
     /**
+     * Flag to prevent engine from re-compiling the scene graph
+     */
+    this._compilationPaused = false;
+
+    /**
      * List of nodes scheduled for destruction by #destroyNode
      * Destructions are done in a batch at the end of each render so as not to disrupt the render.
      */
@@ -2508,9 +2513,27 @@ SceneJS_Engine.prototype._needCompile = function () {
 };
 
 /**
+ * Prevent engine from compiling the scene graph
+ */
+SceneJS_Engine.prototype.pauseCompilation = function () {
+    this._compilationPaused = true;
+};
+
+/**
+ * Resume compilation of scene graph
+ */
+SceneJS_Engine.prototype.resumeCompilation = function () {
+    this._compilationPaused = false;
+};
+
+/**
  * Performs any pending scene compilations or display rebuilds
  */
 SceneJS_Engine.prototype.compile = function () {
+    if (this._compilationPaused) {
+        return;
+    }
+
     if (this._sceneBranchesDirty || this.sceneDirty) { // Need scene graph compilation
         this._sceneBranchesDirty = false;
         SceneJS_events.fireEvent(SceneJS_events.SCENE_COMPILING, {  // Notify compilation support start
@@ -12806,9 +12829,23 @@ SceneJS.Scene.prototype.renderFrame = function (params) {
 };
 
 /**
+ * Prevent re-compilation of scene graph.
+ */
+SceneJS.Scene.prototype.pauseCompilation = function () {
+    return this._engine.pauseCompilation();
+};
+
+/**
+ * Resume re-compilation of scene graph.
+ */
+SceneJS.Scene.prototype.resumeCompilation = function () {
+    return this._engine.resumeCompilation();
+};
+
+/**
  * Force compilation of the scene graph.
  */
-SceneJS.Scene.prototype.compile = function (params) {
+SceneJS.Scene.prototype.compile = function () {
     return this._engine.compile();
 };
 
@@ -16508,8 +16545,10 @@ var SceneJS_Display = function (cfg) {
     /**
      * The object list, containing all elements of #_objects, kept in GL state-sorted order
      */
-    this._objectList = [];
-    this._objectListLen = 0;
+    this._opaqueObjectList = [];
+    this._opaqueObjectListLen = 0;
+    this._transparentObjectList = [];
+    this._transparentObjectListLen = 0;
 
     this._objectPickList = [null];  // Index 0 reserved for background (i.e. no pick)
     this._objectPickListLen = 1;
@@ -16825,7 +16864,7 @@ SceneJS_Display.prototype.render = function (params) {
         this.stateOrderDirty = true;        // Now needs state ordering
     }
 
-
+    var stateOrderDirty = this.stateOrderDirty;
     if (this.stateOrderDirty || (this.imageDirty && this.depthSort)) {
 
         // State sort will be dirty if the state order was dirty (due to priority or
@@ -16836,7 +16875,7 @@ SceneJS_Display.prototype.render = function (params) {
     }
 
     if (this.stateSortDirty) {
-        this._stateSort();              // State sort the object render bin
+        this._stateSort(stateOrderDirty);              // State sort the object render bin
         this.stateSortDirty = false;
         this.drawListDirty = true;      // Now needs new visible object bin
         //this._logObjectList();
@@ -16863,19 +16902,32 @@ SceneJS_Display.prototype.render = function (params) {
 };
 
 SceneJS_Display.prototype._buildObjectList = function () {
-    var lastObjectListLen = this._objectListLen;
-    this._objectListLen = 0;
+    
+    var lastOpaqueObjectListLen = this._opaqueObjectListLen;
+    var lastTransparentObjectListLen = this._transparentObjectListLen;
+    this._opaqueObjectListLen = 0;
+    this._transparentObjectListLen = 0;
     for (var objectId in this._objects) {
         if (this._objects.hasOwnProperty(objectId)) {
-            this._objectList[this._objectListLen++] = this._objects[objectId];
+            if (!this._objects[objectId].flags.transparent) {
+                this._opaqueObjectList[this._opaqueObjectListLen++] = this._objects[objectId];
+            } else {
+                this._transparentObjectList[this._transparentObjectListLen++] = this._objects[objectId];
+            }
         }
     }
 
     // Release memory
 
-    if (lastObjectListLen > this._objectListLen) {
-        for (i = this._objectListLen; i < lastObjectListLen; i++) {
-            this._objectList[i] = null;
+    if (lastOpaqueObjectListLen > this._opaqueObjectListLen) {
+        for (i = this._opaqueObjectListLen; i < lastOpaqueObjectListLen; i++) {
+            this._opaqueObjectList[i] = null;
+        }
+    }
+    
+    if (lastTransparentObjectListLen > this._transparentObjectListLen) {
+        for (i = this._transparentObjectListLen; i < lastTransparentObjectListLen; i++) {
+            this._transparentObjectList[i] = null;
         }
     }
 
@@ -16884,17 +16936,55 @@ SceneJS_Display.prototype._buildObjectList = function () {
 SceneJS_Display.prototype._makeStateSortKeys = function () {
     //  console.log("--------------------------------------------------------------------------------------------------");
     // console.log("SceneJS_Display_makeSortKeys");
+
+    if (this.stateOrderDirty) {
+        for (i = 0, len = this._opaqueObjectListLen; i < len; i++) {
+            object = this._opaqueObjectList[i];
+            if (!object.program) {
+                // Non-visual object (eg. sound)
+                object.sortKey1 = -1;
+            } else {
+                // var depth;
+
+                // if (opaqueDepthSort) {
+                //     depth = object.getDepth();
+                //     this.stateSortDirty = true;
+                //     stateSort = true;
+                // } else {
+                //     depth = 0;
+                // }
+
+                // if (opaqueDepthSort) {
+                //     // near to far
+                //     // so later fragements could be discarded
+                //     object.sortKey1 = (object.stage.priority + 1) * 3000 +
+                //                 //(transparent ? 2 : 1) * 1000 +
+                //                 (object.layer.priority + 1) +
+                //                 depth;
+                // }
+                
+                
+                object.sortKey1 = (object.program.id + 1) * 100000 +
+                                object.texture.stateId;
+                
+                
+            }
+        }
+    }
+
+
     var object;
-    for (var i = 0, len = this._objectListLen; i < len; i++) {
-        object = this._objectList[i];
+    var i;
+    for (i = 0, len = this._transparentObjectListLen; i < len; i++) {
+        object = this._transparentObjectList[i];
         if (!object.program) {
             // Non-visual object (eg. sound)
             object.sortKey1 = -1;
         } else {
-            var transparent = object.flags.transparent;
+            //var transparent = object.flags.transparent;
             var depth;
 
-            if (transparent && this.depthSort) {
+            if (this.depthSort) {
                 depth = object.getDepth();
                 this.stateSortDirty = true;
             } else {
@@ -16902,19 +16992,34 @@ SceneJS_Display.prototype._makeStateSortKeys = function () {
             }
 
             object.sortKey1 = (object.stage.priority + 1) * 3000 +
-                              (transparent ? 2 : 1) * 1000 +
-                              (object.layer.priority + 1) +
-                              1 / (depth + 1);
+                            //(transparent ? 2 : 1) * 1000 +
+                            (object.layer.priority + 1) +
+                            1 / (depth + 1);
+            
             object.sortKey2 = (object.program.id + 1) * 100000 +
                               object.texture.stateId;
         }
     }
+
+
+
+    
     //  console.log("--------------------------------------------------------------------------------------------------");
 };
 
-SceneJS_Display.prototype._stateSort = function () {
-    this._objectList.length = this._objectListLen;
-    this._objectList.sort(this._stateSortObjects);
+SceneJS_Display.prototype._stateSort = function (stateOrderDirty) {
+    //this._objectList.length = this._objectListLen;
+    //this._objectList.sort(this._stateSortObjects);
+    
+    this._transparentObjectList.length = this._transparentObjectListLen;
+    this._transparentObjectList.sort(this._stateSortObjects);
+
+    // don't sort opaque list if the sort is trigerred by depthSort
+    if (stateOrderDirty) {
+        this._opaqueObjectList.length = this._opaqueObjectListLen;
+        this._opaqueObjectList.sort(this._stateSortObjects);
+    }
+    
 };
 
 SceneJS_Display.prototype._stateSortObjects = function (a, b) {
@@ -16924,11 +17029,19 @@ SceneJS_Display.prototype._stateSortObjects = function (a, b) {
 
 SceneJS_Display.prototype._logObjectList = function () {
     console.log("--------------------------------------------------------------------------------------------------");
-    console.log(this._objectListLen + " objects");
-    for (var i = 0, len = this._objectListLen; i < len; i++) {
-        var object = this._objectList[i];
+    
+    console.log(this._opaqueObjectListLen + " opaque objects");
+    for (var i = 0, len = this._opaqueObjectListLen; i < len; i++) {
+        var object = this._opaqueObjectList[i];
         console.log("SceneJS_Display : object[" + i + "] sortKey = " + object.sortKey);
     }
+    
+    console.log(this._transparentObjectListLen + " transparent objects");
+    for (var i = 0, len = this._transparentObjectListLen; i < len; i++) {
+        var object = this._transparentObjectList[i];
+        console.log("SceneJS_Display : object[" + i + "] sortKey = " + object.sortKey);
+    }
+    
     console.log("--------------------------------------------------------------------------------------------------");
 };
 
@@ -16976,9 +17089,18 @@ SceneJS_Display.prototype._buildDrawList = function () {
         tagRegex = this._tagSelector.regex;
     }
 
-    for (i = 0, len = this._objectListLen; i < len; i++) {
+    var opaqueObjectListLen = this._opaqueObjectListLen;
+    for (i = 0, len = this._opaqueObjectListLen + this._transparentObjectListLen; 
+            i < len; i++) {
 
-        object = this._objectList[i];
+        //object = this._objectList[i];
+
+        // render opaque objects first, and then transparent onese
+        if (i < opaqueObjectListLen) {
+            object = this._opaqueObjectList[i];
+        } else {
+            object = this._transparentObjectList[i - opaqueObjectListLen];
+        }
 
         // Cull invisible objects
         if (object.enable.enabled === false) {
@@ -17035,6 +17157,10 @@ SceneJS_Display.prototype._buildDrawList = function () {
             this._objectDrawList[this._objectDrawListLen++] = object;
         }
     }
+    
+    
+    
+    
 
     // Append chunks for objects within render targets first
 

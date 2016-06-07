@@ -727,7 +727,6 @@ SceneJS_Display.prototype._makeStateSortKeys = function () {
             
             object.sortKey2 = (object.program.id + 1) * 100000 +
                               object.texture.stateId;
-            
         }
     }
 
