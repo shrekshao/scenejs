@@ -297,9 +297,6 @@ var SceneJS_Display = function (cfg) {
     this._targetList = [];
     this._targetListLen = 0;
 
-    this._objectDrawList = [];
-    this._objectDrawListLen = 0;
-
     // Tracks the index of the first chunk in the transparency pass. The first run of chunks
     // in the list are for opaque objects, while the remainder are for transparent objects.
     // This supports a mode in which we only render the opaque chunks.
@@ -819,24 +816,16 @@ SceneJS_Display.prototype._buildDrawList = function () {
 
     var lastDrawListLen = this._drawListLen;
     var lastPickDrawListLen = this._pickDrawListLen;
-    var lastObjectDrawListLen = this._objectDrawListLen;
     var lastObjectPickListLen = this._objectPickListLen;
 
     this._drawListLen = 0;
     this._pickDrawListLen = 0;
-    this._objectDrawListLen = 0;
     this._objectPickListLen = 1;
 
     this._drawListTransparentIndex = -1;
 
     // For each render target, a list of objects to render to that target
     var targetObjectLists = {};
-
-    // A list of all the render target object lists
-    var targetListList = [];
-
-    // List of all targets
-    var targetList = [];
 
     var object;
     var tagMask;
@@ -961,44 +950,6 @@ SceneJS_Display.prototype._buildDrawList = function () {
         this._appendObjectToDrawLists(object, pickable);
     }
 
-
-    // // Append chunks for objects within render targets first
-
-    // var list;
-    // var target;
-    // var object;
-    // var pickable;
-
-    // for (i = 0, len = targetListList.length; i < len; i++) {
-
-    //     list = targetListList[i];
-    //     target = targetList[i];
-
-    //     this._appendRenderTargetChunk(target);
-
-    //     for (j = 0, lenj = list.length; j < lenj; j++) {
-    //         object = list[j];
-    //         pickable = object.stage && object.stage.pickable
-    //             && object.flags && object.flags.picking; // We'll only pick objects in pickable stages
-    //         this._appendObjectToDrawLists(object, pickable);
-    //     }
-    // }
-
-    // if (object) {
-
-    //     // Unbinds any render target bound previously
-    //     this._appendRenderTargetChunk(this._chunkFactory.getChunk(-1, "renderTarget", object.program, {}));
-    // }
-
-    // // Append chunks for objects not in render targets
-
-    // for (i = 0, len = this._objectDrawListLen; i < len; i++) {
-    //     object = this._objectDrawList[i];
-    //     pickable = (!object.stage || (object.stage && object.stage.pickable))
-    //         && (object.flags && object.flags.picking); // We'll only pick objects in pickable stages
-    //     this._appendObjectToDrawLists(object, pickable);
-    // }
-
     // Release memory
 
     if (lastDrawListLen > this._drawListLen) {
@@ -1010,12 +961,6 @@ SceneJS_Display.prototype._buildDrawList = function () {
     if (lastPickDrawListLen > this._pickDrawListLen) {
         for (i = this._pickDrawListLen; i < lastPickDrawListLen; i++) {
             this._pickDrawList[i] = null;
-        }
-    }
-
-    if (lastObjectDrawListLen > this._objectDrawListLen) {
-        for (i = this._objectDrawListLen; i < lastObjectDrawListLen; i++) {
-            this._objectDrawList[i] = null;
         }
     }
 
