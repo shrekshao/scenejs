@@ -674,7 +674,7 @@ SceneJS_Display.prototype._makeStateSortKeys = function () {
                 object.sortKey1 = -1;
             } else {
                 
-                object.sortKey1 = (object.renderTarget.targets ? 2 : 1) * 30000 +
+                object.sortKey1 = (object.renderTarget.targets ? 0 : 1) * 30000 +
                             (object.stage.priority + 1) * 3000 + 
                             (object.layer.priority + 1);
                 
@@ -707,7 +707,7 @@ SceneJS_Display.prototype._makeStateSortKeys = function () {
                 depth = 0;
             }
 
-            object.sortKey1 = (object.renderTarget.targets ? 2 : 1) * 30000 + 
+            object.sortKey1 = (object.renderTarget.targets ? 0 : 1) * 30000 + 
                             (object.stage.priority + 1) * 3000 +
                             //(transparent ? 2 : 1) * 1000 +
                             (object.layer.priority + 1) +
@@ -928,6 +928,10 @@ SceneJS_Display.prototype._buildDrawList = function () {
         }
     }
 
+    if (object) {
+        // Unbinds any render target bound previously
+        this._appendRenderTargetChunk(this._chunkFactory.getChunk(-1, "renderTarget", object.program, {}));
+    }
 
     // add the rest objects in _opaqueObjectList
     for (i = opaqueObjectListFirstNoTargetId, len = this._opaqueObjectListLen; i < len; i++) {
