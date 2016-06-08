@@ -673,32 +673,19 @@ SceneJS_Display.prototype._makeStateSortKeys = function () {
                 // Non-visual object (eg. sound)
                 object.sortKey1 = -1;
             } else {
-                // var depth;
-
-                // if (opaqueDepthSort) {
-                //     depth = object.getDepth();
-                //     this.stateSortDirty = true;
-                //     stateSort = true;
-                // } else {
-                //     depth = 0;
-                // }
-
-                // if (opaqueDepthSort) {
-                //     // near to far
-                //     // so later fragements could be discarded
-                //     object.sortKey1 = (object.stage.priority + 1) * 3000 +
-                //                 //(transparent ? 2 : 1) * 1000 +
-                //                 (object.layer.priority + 1) +
-                //                 depth;
-                // }
                 
+                object.sortKey1 = (object.renderTarget.targets ? 2 : 1) * 30000 +
+                            (object.stage.priority + 1) * 3000 + 
+                            (object.layer.priority + 1);
                 
-                object.sortKey1 = (object.program.id + 1) * 100000 +
+                object.sortKey2 = (object.program.id + 1) * 100000 +
                                 object.texture.stateId;
                 
                 
             }
         }
+
+        //console.log('make opaque list sort keys!!!!');
     }
 
 
@@ -720,7 +707,8 @@ SceneJS_Display.prototype._makeStateSortKeys = function () {
                 depth = 0;
             }
 
-            object.sortKey1 = (object.stage.priority + 1) * 3000 +
+            object.sortKey1 = (object.renderTarget.targets ? 2 : 1) * 30000 + 
+                            (object.stage.priority + 1) * 3000 +
                             //(transparent ? 2 : 1) * 1000 +
                             (object.layer.priority + 1) +
                             1 / (depth + 1);
@@ -730,6 +718,7 @@ SceneJS_Display.prototype._makeStateSortKeys = function () {
         }
     }
 
+    //console.log('make transparent list sort keys!!!!');
 
 
     
@@ -774,12 +763,54 @@ SceneJS_Display.prototype._logObjectList = function () {
     console.log("--------------------------------------------------------------------------------------------------");
 };
 
+
+
+SceneJS_Display.prototype._cullObject = function(object, tagMask) {
+
+    // Cull invisible objects
+    if (object.enable.enabled === false) {
+        return true;
+    }
+
+    flags = object.flags;
+
+    // Cull invisible objects
+    if (flags.enabled === false) {
+        return true;
+    }
+
+    // Cull objects in disabled layers
+    if (!object.layer.enabled) {
+        return true;
+    }
+
+    // Cull objects with unmatched tags
+    if (tagMask) {
+        tagCore = object.tag;
+        if (tagCore.tag) {
+            if (tagCore.mask != tagMask) { // Scene tag mask was updated since last render
+                tagCore.mask = tagMask;
+                tagCore.matches = tagRegex.test(tagCore.tag);
+            }
+            if (!tagCore.matches) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+
+
+
+
 SceneJS_Display.prototype._buildDrawList = function () {
 
     this._lastStateId = this._lastStateId || [];
     this._lastPickStateId = this._lastPickStateId || [];
 
-    var i;
+    var i, j;
 
     for (i = 0; i < 25; i++) {
         this._lastStateId[i] = null;
@@ -812,121 +843,157 @@ SceneJS_Display.prototype._buildDrawList = function () {
     var tagRegex;
     var tagCore;
     var flags;
+    var pickable;
+
+    var targets;
+    var target;
+    var coreId;
+
+    var opaqueObjectListFirstNoTargetId = 0;
+    var transparentListFirstNoTargetId = 0;
 
     if (this._tagSelector) {
         tagMask = this._tagSelector.mask;
         tagRegex = this._tagSelector.regex;
     }
 
-    var opaqueObjectListLen = this._opaqueObjectListLen;
-    for (i = 0, len = this._opaqueObjectListLen + this._transparentObjectListLen; 
-            i < len; i++) {
 
-        //object = this._objectList[i];
-
-        // render opaque objects first, and then transparent onese
-        if (i < opaqueObjectListLen) {
-            object = this._opaqueObjectList[i];
-        } else {
-            object = this._transparentObjectList[i - opaqueObjectListLen];
-        }
-
-        // Cull invisible objects
-        if (object.enable.enabled === false) {
+    // add objects with render target in _opaqueObjectList
+    for (i = 0, len = this._opaqueObjectListLen; i < len; i++) {
+        
+        object = this._opaqueObjectList[i];
+        
+        if (this._cullObject(object, tagMask)) {
             continue;
         }
 
-        flags = object.flags;
+        if (object.renderTarget.targets) {
+            targets = object.renderTarget.targets;
 
-        // Cull invisible objects
-        if (flags.enabled === false) {
-            continue;
-        }
+            for (j = 0, lenj = targets.length; j < lenj; j++) {
+                target = targets[j];
+                coreId = target.coreId;
 
-        // Cull objects in disabled layers
-        if (!object.layer.enabled) {
-            continue;
-        }
+                if (!targetObjectLists[coreId]) {
+                    // new target
+                    targetObjectLists[coreId] = true;
 
-        // Cull objects with unmatched tags
-        if (tagMask) {
-            tagCore = object.tag;
-            if (tagCore.tag) {
-                if (tagCore.mask != tagMask) { // Scene tag mask was updated since last render
-                    tagCore.mask = tagMask;
-                    tagCore.matches = tagRegex.test(tagCore.tag);
+                    this._appendRenderTargetChunk(this._chunkFactory.getChunk(target.stateId, "renderTarget", object.program, target));
                 }
-                if (!tagCore.matches) {
-                    continue;
-                }
+
+                pickable = object.stage && object.stage.pickable
+                    && object.flags && object.flags.picking; // We'll only pick objects in pickable stages
+                this._appendObjectToDrawLists(object, pickable);
+
             }
+        } else {
+            opaqueObjectListFirstNoTargetId = i;
+            break;
+        }
+    }
+
+    // add objects with render target in _transparentObjectList
+    for (i = 0, len = this._transparentObjectListLen; i < len; i++) {
+        
+        object = this._transparentObjectList[i];
+        
+        if (this._cullObject(object, tagMask)) {
+            continue;
         }
 
-        // Put objects with render targets into a bin for each target
         if (object.renderTarget.targets) {
             var targets = object.renderTarget.targets;
             var target;
             var coreId;
             var list;
-            for (var j = 0, lenj = targets.length; j < lenj; j++) {
+            for (j = 0, lenj = targets.length; j < lenj; j++) {
                 target = targets[j];
                 coreId = target.coreId;
-                list = targetObjectLists[coreId];
-                if (!list) {
-                    list = [];
-                    targetObjectLists[coreId] = list;
-                    targetListList.push(list);
-                    targetList.push(this._chunkFactory.getChunk(target.stateId, "renderTarget", object.program, target));
+
+                if (!targetObjectLists[coreId]) {
+                    // new target
+                    targetObjectLists[coreId] = true;
+
+                    this._appendRenderTargetChunk(this._chunkFactory.getChunk(target.stateId, "renderTarget", object.program, target));
                 }
-                list.push(object);
+
+                pickable = object.stage && object.stage.pickable
+                    && object.flags && object.flags.picking; // We'll only pick objects in pickable stages
+                this._appendObjectToDrawLists(object, pickable);
+
             }
         } else {
-
-            //
-            this._objectDrawList[this._objectDrawListLen++] = object;
-        }
-    }
-    
-    
-    
-    
-
-    // Append chunks for objects within render targets first
-
-    var list;
-    var target;
-    var object;
-    var pickable;
-
-    for (i = 0, len = targetListList.length; i < len; i++) {
-
-        list = targetListList[i];
-        target = targetList[i];
-
-        this._appendRenderTargetChunk(target);
-
-        for (var j = 0, lenj = list.length; j < lenj; j++) {
-            object = list[j];
-            pickable = object.stage && object.stage.pickable
-                && object.flags && object.flags.picking; // We'll only pick objects in pickable stages
-            this._appendObjectToDrawLists(object, pickable);
+            transparentListFirstNoTargetId = i;
+            break;
         }
     }
 
-    if (object) {
 
-        // Unbinds any render target bound previously
-        this._appendRenderTargetChunk(this._chunkFactory.getChunk(-1, "renderTarget", object.program, {}));
-    }
+    // add the rest objects in _opaqueObjectList
+    for (i = opaqueObjectListFirstNoTargetId, len = this._opaqueObjectListLen; i < len; i++) {
+        
+        object = this._opaqueObjectList[i];
+        
+        if (this._cullObject(object, tagMask)) {
+            continue;
+        }
 
-    // Append chunks for objects not in render targets
-
-    for (i = 0, len = this._objectDrawListLen; i < len; i++) {
-        object = this._objectDrawList[i];
         pickable = (!object.stage || (object.stage && object.stage.pickable))
             && (object.flags && object.flags.picking); // We'll only pick objects in pickable stages
         this._appendObjectToDrawLists(object, pickable);
     }
+
+    // add the rest objects in _transparentObjectList
+    for (i = transparentListFirstNoTargetId, len = this._transparentObjectListLen; i < len; i++) {
+        
+        object = this._transparentObjectList[i];
+        
+        if (this._cullObject(object, tagMask)) {
+            continue;
+        }
+
+        pickable = (!object.stage || (object.stage && object.stage.pickable))
+            && (object.flags && object.flags.picking); // We'll only pick objects in pickable stages
+        this._appendObjectToDrawLists(object, pickable);
+    }
+
+
+    // // Append chunks for objects within render targets first
+
+    // var list;
+    // var target;
+    // var object;
+    // var pickable;
+
+    // for (i = 0, len = targetListList.length; i < len; i++) {
+
+    //     list = targetListList[i];
+    //     target = targetList[i];
+
+    //     this._appendRenderTargetChunk(target);
+
+    //     for (j = 0, lenj = list.length; j < lenj; j++) {
+    //         object = list[j];
+    //         pickable = object.stage && object.stage.pickable
+    //             && object.flags && object.flags.picking; // We'll only pick objects in pickable stages
+    //         this._appendObjectToDrawLists(object, pickable);
+    //     }
+    // }
+
+    // if (object) {
+
+    //     // Unbinds any render target bound previously
+    //     this._appendRenderTargetChunk(this._chunkFactory.getChunk(-1, "renderTarget", object.program, {}));
+    // }
+
+    // // Append chunks for objects not in render targets
+
+    // for (i = 0, len = this._objectDrawListLen; i < len; i++) {
+    //     object = this._objectDrawList[i];
+    //     pickable = (!object.stage || (object.stage && object.stage.pickable))
+    //         && (object.flags && object.flags.picking); // We'll only pick objects in pickable stages
+    //     this._appendObjectToDrawLists(object, pickable);
+    // }
 
     // Release memory
 
@@ -986,7 +1053,7 @@ SceneJS_Display.prototype._appendObjectToDrawLists = function (object, pickable)
 
                 // Get index of first chunk in transparency pass
 
-                if (chunk.core && chunk.core.transparent && this._drawListTransparentIndex < 0) {
+                if (this._drawListTransparentIndex < 0 && chunk.core && chunk.core.transparent) {
                     this._drawListTransparentIndex = this._drawListLen;
                 }
                 this._drawListLen++;
@@ -1610,6 +1677,21 @@ SceneJS_Display.prototype._doDrawList = function (params) {
     frameCtx.texture = null;
     frameCtx.normalMapUVLayerIdx = -1;
     frameCtx.regionMapUVLayerIdx = -1;
+
+    // // Preparation for things used to be done in buildDrawList
+    
+    // this._lastStateId = this._lastStateId || [];
+    // this._lastPickStateId = this._lastPickStateId || [];
+
+    // var i;
+
+    // for (i = 0; i < 25; i++) {
+    //     this._lastStateId[i] = null;
+    //     this._lastPickStateId[i] = null;
+    // }
+
+    // //--------------------------------------------------------
+
 
     // The extensions needs to be re-queried in case the context was lost and has been recreated.
     if (SceneJS.WEBGL_INFO.SUPPORTED_EXTENSIONS["OES_element_index_uint"]) {
