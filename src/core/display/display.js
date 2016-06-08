@@ -762,7 +762,7 @@ SceneJS_Display.prototype._logObjectList = function () {
 
 
 
-SceneJS_Display.prototype._cullObject = function(object, tagMask) {
+SceneJS_Display.prototype._cullObject = function(object, tagMask, tagRegex) {
 
     // Cull invisible objects
     if (object.enable.enabled === false) {
@@ -783,7 +783,7 @@ SceneJS_Display.prototype._cullObject = function(object, tagMask) {
 
     // Cull objects with unmatched tags
     if (tagMask) {
-        tagCore = object.tag;
+        var tagCore = object.tag;
         if (tagCore.tag) {
             if (tagCore.mask != tagMask) { // Scene tag mask was updated since last render
                 tagCore.mask = tagMask;
@@ -830,7 +830,7 @@ SceneJS_Display.prototype._buildDrawList = function () {
     var object;
     var tagMask;
     var tagRegex;
-    var tagCore;
+    
     var flags;
     var pickable;
 
@@ -852,7 +852,7 @@ SceneJS_Display.prototype._buildDrawList = function () {
         
         object = this._opaqueObjectList[i];
         
-        if (this._cullObject(object, tagMask)) {
+        if (this._cullObject(object, tagMask, tagRegex)) {
             continue;
         }
 
@@ -886,7 +886,7 @@ SceneJS_Display.prototype._buildDrawList = function () {
         
         object = this._transparentObjectList[i];
         
-        if (this._cullObject(object, tagMask)) {
+        if (this._cullObject(object, tagMask, tagRegex)) {
             continue;
         }
 
@@ -927,7 +927,7 @@ SceneJS_Display.prototype._buildDrawList = function () {
         
         object = this._opaqueObjectList[i];
         
-        if (this._cullObject(object, tagMask)) {
+        if (this._cullObject(object, tagMask, tagRegex)) {
             continue;
         }
 
@@ -941,7 +941,7 @@ SceneJS_Display.prototype._buildDrawList = function () {
         
         object = this._transparentObjectList[i];
         
-        if (this._cullObject(object, tagMask)) {
+        if (this._cullObject(object, tagMask, tagRegex)) {
             continue;
         }
 
